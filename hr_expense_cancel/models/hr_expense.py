@@ -12,12 +12,12 @@ class HrExpenseSheet(models.Model):
         for sheet in self:
             account_move = sheet.account_move_id
             sheet.account_move_id = False
+            payments = self.env['account.payment'].search([
+                ('expense_sheet_id', '=', sheet.id),
+                ('state', '!=', 'cancelled'),
+            ])
             # If the sheet is paid then remove payments
             if sheet.state == 'done':
-                payments = self.env['account.payment'].search([
-                    ('expense_sheet_id', '=', sheet.id),
-                    ('state', '!=', 'cancelled'),
-                ])
                 if sheet.expense_line_ids[:1].payment_mode == 'own_account':
                     self._remove_move_reconcile(payments, account_move)
                     self._cancel_payments(payments)
@@ -31,6 +31,8 @@ class HrExpenseSheet(models.Model):
             # it has not been deleted
             if account_move.exists():
                 if account_move.state != 'draft':
+                    # case : unreconcile invoice from hr_expense
+                    self._remove_move_reconcile(payments, account_move)
                     account_move.button_cancel()
                 account_move.unlink()
             sheet.state = 'submit'
@@ -48,11 +50,14 @@ class HrExpenseSheet(models.Model):
         """Delete only reconciliations made with the payments generated
         by hr_expense module automatically"""
         reconcile = account_move.mapped('line_ids.full_reconcile_id')
-
         payments_aml = payments.mapped('move_line_ids')
         aml_unreconcile = payments_aml.filtered(
             lambda r: r.full_reconcile_id in reconcile)
-
+        # case : create vendor from hr_expense
+        aml_hr_expense_invoice = self.env['account.move.line'].search([
+            ('full_reconcile_id', 'in', reconcile.ids),
+            ('move_id', '=', account_move.id)])
+        aml_unreconcile |= aml_hr_expense_invoice
         aml_unreconcile.remove_move_reconcile()
 
     def _cancel_payments(self, payments):
