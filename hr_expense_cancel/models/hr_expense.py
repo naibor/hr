@@ -31,8 +31,8 @@ class HrExpenseSheet(models.Model):
             # it has not been deleted
             if account_move.exists():
                 if account_move.state != 'draft':
-                    # case : unreconcile invoice from hr_expense
-                    self._remove_move_reconcile(payments, account_move)
+                    # case : cancel invoice from hr_expense
+                    self._remove_reconcile_hr_invoice(account_move)
                     account_move.button_cancel()
                 account_move.unlink()
             sheet.state = 'submit'
@@ -46,6 +46,14 @@ class HrExpenseSheet(models.Model):
             })
         return res
 
+    def _remove_reconcile_hr_invoice(self, account_move):
+        """Cancel invoice made by hr_expense_invoice module automatically"""
+        reconcile = account_move.mapped('line_ids.full_reconcile_id')
+        aml = self.env['account.move.line'].search([
+            ('full_reconcile_id', 'in', reconcile.ids)])
+        exp_move_line = aml.filtered(lambda l: l.move_id.id != account_move.id)
+        exp_move_line.invoice_id.action_invoice_cancel()
+
     def _remove_move_reconcile(self, payments, account_move):
         """Delete only reconciliations made with the payments generated
         by hr_expense module automatically"""
@@ -53,11 +61,6 @@ class HrExpenseSheet(models.Model):
         payments_aml = payments.mapped('move_line_ids')
         aml_unreconcile = payments_aml.filtered(
             lambda r: r.full_reconcile_id in reconcile)
-        # case : create vendor from hr_expense
-        aml_hr_expense_invoice = self.env['account.move.line'].search([
-            ('full_reconcile_id', 'in', reconcile.ids),
-            ('move_id', '=', account_move.id)])
-        aml_unreconcile |= aml_hr_expense_invoice
         aml_unreconcile.remove_move_reconcile()
 
     def _cancel_payments(self, payments):
