@@ -16,6 +16,8 @@ class HrExpenseSheet(models.Model):
                 ('expense_sheet_id', '=', sheet.id),
                 ('state', '!=', 'cancelled'),
             ])
+            # case : cancel invoice from hr_expense
+            self._remove_reconcile_hr_invoice(account_move)
             # If the sheet is paid then remove payments
             if sheet.state == 'done':
                 if sheet.expense_line_ids[:1].payment_mode == 'own_account':
@@ -31,8 +33,6 @@ class HrExpenseSheet(models.Model):
             # it has not been deleted
             if account_move.exists():
                 if account_move.state != 'draft':
-                    # case : cancel invoice from hr_expense
-                    self._remove_reconcile_hr_invoice(account_move)
                     account_move.button_cancel()
                 account_move.unlink()
             sheet.state = 'submit'
